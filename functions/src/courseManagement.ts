@@ -2255,6 +2255,38 @@ export const saveGalaxyMapHttpsEndpoint = runWith({
 });
 
 /**
+ * Strip per-mission content blobs from a galaxy map so it can be stored as
+ * galaxyMapAsObject on the course document. Mission HTML artifacts can be
+ * tens of KB each; embedding them twice (tasks subcollection + course doc)
+ * pushes the course document past Firestore's 1 MiB limit. Consumers of
+ * galaxyMapAsObject (AI refinement context, AI galaxy editor) only need the
+ * star/planet structure, not the rendered mission content.
+ */
+function stripMissionContentFromGalaxyMap(
+  galaxyMap: Record<string, unknown>,
+): Record<string, unknown> {
+  const stars = Array.isArray(galaxyMap.stars) ? galaxyMap.stars : [];
+  return {
+    ...galaxyMap,
+    stars: stars.map((starValue) => {
+      const star = starValue as Record<string, unknown>;
+      const planets = Array.isArray(star.planets) ? star.planets : [];
+      return {
+        ...star,
+        planets: planets.map((planetValue) => {
+          const {
+            missionInstructionsHtmlString: _html,
+            missionInstructionsObject: _obj,
+            ...rest
+          } = planetValue as Record<string, unknown>;
+          return rest;
+        }),
+      };
+    }),
+  };
+}
+
+/**
  * Save AI-generated galaxy map to database
  */
 async function saveGalaxyMap(
@@ -2326,7 +2358,10 @@ async function saveGalaxyMap(
         title: courseData.title,
         description: courseData.description,
         image: imageData || null,
-        galaxyMapAsObject: { ...galaxyMap, idInDatabase: existingCourseId },
+        galaxyMapAsObject: {
+          ...stripMissionContentFromGalaxyMap(galaxyMap),
+          idInDatabase: existingCourseId,
+        },
         topicTotal: stars.length,
         taskTotal: totalPlanets,
       });
@@ -2368,7 +2403,7 @@ async function saveGalaxyMap(
         },
         status: "drafting",
         owner: db.collection("people").doc(personId),
-        galaxyMapAsObject: galaxyMap,
+        galaxyMapAsObject: stripMissionContentFromGalaxyMap(galaxyMap),
       };
       console.log("📝 Formatted course data:", formattedCourse);
 
@@ -2382,7 +2417,10 @@ async function saveGalaxyMap(
           id: courseDocRef.id,
           topicTotal: stars.length,
           taskTotal: totalPlanets,
-          galaxyMapAsObject: { ...galaxyMap, idInDatabase: courseDocRef.id },
+          galaxyMapAsObject: {
+            ...stripMissionContentFromGalaxyMap(galaxyMap),
+            idInDatabase: courseDocRef.id,
+          },
         });
         console.log("✅ Course document updated successfully");
       } catch (courseError: unknown) {
