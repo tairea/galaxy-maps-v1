@@ -1,6 +1,13 @@
 <template>
   <div class="selected-mission-card" :class="{ mobile: isMobile }">
-    <div v-html="renderedTaskDescription" class="task-description py-2"></div>
+    <MissionArtifactLauncher
+      v-if="isArtifactMission"
+      :task="task"
+      :disabled="!completed && !inreview"
+      :button-label="completed || inreview ? 'REPLAY MISSION' : 'LAUNCH MISSION'"
+      class="py-2"
+    />
+    <div v-else v-html="renderedTaskDescription" class="task-description py-2"></div>
     <v-row class="pb-8">
       <div v-if="task.video || task.slides" class="supporting-materials">
         <p class="text-overline missionAccent--text">Supporting Materials</p>
@@ -60,10 +67,17 @@
 import { DateTime } from "luxon";
 import * as smd from "streaming-markdown";
 
+import MissionArtifactLauncher from "@/components/SolarSystemView/MissionsList/MissionsCard/MissionArtifactLauncher.vue";
+import { resolveMissionContent } from "@/lib/missionArtifact";
+
 export default {
   name: "SelectedMissionsCard",
+  components: { MissionArtifactLauncher },
   props: ["task", "inreview", "completed"],
   computed: {
+    isArtifactMission() {
+      return resolveMissionContent(this.task).mode === "artifact";
+    },
     taskMissionInstructionsHtml() {
       if (!this.task) return "";
       return this.task.missionInstructionsHtmlString || this.task.description || "";

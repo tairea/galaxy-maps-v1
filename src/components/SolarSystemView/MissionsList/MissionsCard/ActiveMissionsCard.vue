@@ -1,6 +1,11 @@
 <template>
   <div class="active-mission-card" :class="{ mobile: isMobile }">
-    <div v-html="renderedTaskDescription" class="task-description"></div>
+    <MissionArtifactLauncher
+      v-if="isArtifactMission"
+      :task="task"
+      @artifact-complete="onArtifactComplete"
+    />
+    <div v-else v-html="renderedTaskDescription" class="task-description"></div>
     <v-row class="pb-8">
       <!-- Supporting Materials (video and slides no longer used, but might bring in supporting materials later) -->
       <!-- <div v-if="task.video || task.slides" class="supporting-materials">
@@ -47,6 +52,7 @@
             :reviewed="true"
           /> -->
           <MissionCompletedDialog
+            ref="missionCompletedDialog"
             :course="course"
             :topic="topic"
             :task="task"
@@ -65,6 +71,8 @@
 import MissionCompletedDialog from "@/components/Dialogs/MissionCompletedDialog.vue";
 import RequestHelpDialog from "@/components/Dialogs/RequestHelpDialog.vue";
 import SubmissionReviewDialog from "@/components/Dialogs/SubmissionReviewDialog.vue";
+import MissionArtifactLauncher from "@/components/SolarSystemView/MissionsList/MissionsCard/MissionArtifactLauncher.vue";
+import { resolveMissionContent } from "@/lib/missionArtifact";
 import useRootStore from "@/store/index";
 import { mapState, mapActions } from "pinia";
 import * as smd from "streaming-markdown";
@@ -72,6 +80,7 @@ import * as smd from "streaming-markdown";
 export default {
   name: "ActiveMissionsCard",
   components: {
+    MissionArtifactLauncher,
     MissionCompletedDialog,
     RequestHelpDialog,
     SubmissionReviewDialog,
@@ -91,6 +100,9 @@ export default {
   },
   props: ["course", "topic", "task", "active", "declined", "inreview", "completed"],
   computed: {
+    isArtifactMission() {
+      return resolveMissionContent(this.task).mode === "artifact";
+    },
     taskMissionInstructionsHtml() {
       if (!this.task) return "";
       return this.task.missionInstructionsHtmlString || this.task.description || "";
@@ -160,6 +172,15 @@ export default {
       "getSubmissionByCourseIdPersonIdTaskId",
       "setStartMissionLoading",
     ]),
+
+    /**
+     * The interactive mission player signalled completion. Never write
+     * completion directly from iframe content — prompt the existing
+     * confirmation flow (XP / unlock / xAPI side effects stay gated).
+     */
+    onArtifactComplete() {
+      this.$refs.missionCompletedDialog?.open();
+    },
 
     /**
      * Detects if content is HTML or markdown

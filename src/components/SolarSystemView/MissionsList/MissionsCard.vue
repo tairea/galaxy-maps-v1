@@ -66,7 +66,13 @@
             class="task-description-container"
             :style="task.color ? 'color:' + task.color + ' !important' : ''"
           >
+            <MissionArtifactLauncher
+              v-if="isArtifactMission"
+              :task="task"
+              button-label="PREVIEW MISSION"
+            />
             <div
+              v-else
               v-html="renderedTaskDescription"
               class="task-description"
               :class="{ 'task-description-collapsed': !descriptionExpanded }"
@@ -163,8 +169,8 @@
                 task.submissionRequired
                   ? { color: '#FAF200' }
                   : task.color
-                    ? { color: task.color + ' !important' }
-                    : '',
+                  ? { color: task.color + ' !important' }
+                  : '',
               ]"
             >
               {{ task.submissionRequired ? "YES" : "NO" }}
@@ -190,14 +196,14 @@
               completed
                 ? "COMPLETED"
                 : inreview
-                  ? "IN REVIEW"
-                  : unlocked
-                    ? "START MISSION"
-                    : active
-                      ? "ACTIVE MISSION"
-                      : declined
-                        ? "RETRY MISSION"
-                        : "LOCKED"
+                ? "IN REVIEW"
+                : unlocked
+                ? "START MISSION"
+                : active
+                ? "ACTIVE MISSION"
+                : declined
+                ? "RETRY MISSION"
+                : "LOCKED"
             }}
           </p>
 
@@ -349,7 +355,9 @@
 import CreateEditDeleteMissionDialog from "@/components/Dialogs/CreateEditDeleteMissionDialog.vue";
 import StartMissionDialogV2 from "@/components/Dialogs/StartMissionDialogV2.vue";
 import ActiveMissionsCard from "@/components/SolarSystemView/MissionsList/MissionsCard/ActiveMissionsCard.vue";
+import MissionArtifactLauncher from "@/components/SolarSystemView/MissionsList/MissionsCard/MissionArtifactLauncher.vue";
 import SelectedMissionsCard from "@/components/SolarSystemView/MissionsList/MissionsCard/SelectedMissionsCard.vue";
+import { resolveMissionContent } from "@/lib/missionArtifact";
 import useRootStore from "@/store/index";
 import {
   mdiCheck,
@@ -370,6 +378,7 @@ export default {
     CreateEditDeleteMissionDialog,
     StartMissionDialogV2,
     ActiveMissionsCard,
+    MissionArtifactLauncher,
     SelectedMissionsCard,
   },
   props: ["course", "topic", "task", "index", "teacher", "topicActive"],
@@ -433,6 +442,10 @@ export default {
       }
     },
 
+    isArtifactMission() {
+      return resolveMissionContent(this.task).mode === "artifact";
+    },
+
     taskMissionInstructionsHtml() {
       if (!this.task) return "";
       return this.task.missionInstructionsHtmlString || this.task.description || "";
@@ -443,6 +456,8 @@ export default {
      */
     hasLongDescription() {
       if (!this.task || !this.taskMissionInstructionsHtml) return false;
+      // Artifact missions show a launch panel, not collapsible prose
+      if (this.isArtifactMission) return false;
 
       // Check for HTML content that would make it visually long
       if (this.isHtmlContent(this.taskMissionInstructionsHtml)) {

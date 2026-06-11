@@ -393,6 +393,10 @@ export default {
       "getAllSubmittedWorkByCourseId",
     ]),
     ...mapActions(useSolarSystemViewStore, ["refreshTopic", "refreshPersonTopicsAndTasks"]),
+    /** Open programmatically (e.g. after an interactive mission player finishes). */
+    open() {
+      this.dialog = true;
+    },
     async reSubmitWorkForReview() {
       this.loading = true;
       this.disabled = true;

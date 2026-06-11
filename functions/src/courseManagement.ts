@@ -2494,6 +2494,7 @@ async function saveGalaxyMap(
           missionInstructions?: unknown;
           missionInstructionsHtmlString?: string;
           missionInstructionsObject?: unknown;
+          missionRenderMode?: string;
         };
 
         // Prefer explicit fields sent by the client, but maintain legacy fallbacks.
@@ -2553,6 +2554,9 @@ async function saveGalaxyMap(
           description: planetDescription, // keep legacy field as high-level description only
           missionInstructionsHtmlString: missionInstructionsHtmlString ?? null,
           missionInstructionsObject: missionInstructionsObject ?? null,
+          // Whitelisted render directive: "iframe" marks a complete standalone
+          // HTML artifact that the app must render in a sandboxed iframe.
+          missionRenderMode: planet.missionRenderMode === "iframe" ? "iframe" : null,
           submissionRequired: false,
           submissionInstructions: "",
           color: "#69a1e2",

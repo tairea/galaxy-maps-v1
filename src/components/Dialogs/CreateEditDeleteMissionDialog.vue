@@ -124,7 +124,39 @@
                 v-model="task.description"
                 label="Mission Content"
               ></v-textarea> -->
-              <div>
+
+              <!-- INTERACTIVE HTML ARTIFACT MISSION (read-only content; Quill would mangle it) -->
+              <div v-if="isArtifactMission" class="artifact-panel mb-8">
+                <p class="text-overline missionAccent--text ma-0">
+                  <v-icon small color="missionAccent" class="mr-1">{{ mdiCubeOutline }}</v-icon>
+                  INTERACTIVE HTML MISSION (AI-AUTHORED) — {{ artifactSizeKb }} KB
+                </p>
+                <p class="dialog-description mt-2">
+                  This mission is a self-contained interactive player. Its content can't be edited
+                  here — rebuild it with the mission builder or replace the HTML file below. Title,
+                  duration, submission settings and colour can still be edited.
+                </p>
+                <MissionArtifactPlayerDialog
+                  v-if="artifactForPreview"
+                  :artifact="artifactForPreview"
+                  :title="task.title"
+                  button-label="PREVIEW MISSION"
+                />
+                <v-file-input
+                  class="input-field mt-4"
+                  outlined
+                  dense
+                  :dark="dark"
+                  :light="!dark"
+                  color="missionAccent"
+                  accept=".html,text/html"
+                  label="Replace artifact (.html)"
+                  :error-messages="artifactFileError"
+                  @change="onArtifactFileSelected"
+                ></v-file-input>
+              </div>
+
+              <div v-else>
                 <vue-editor
                   ref="quillEditor"
                   id="editor1"
@@ -141,7 +173,7 @@
               </div>
 
               <!-- ========== Generate with A.i. Button ========== -->
-              <div class="d-flex justify-end" style="margin-top: -20px">
+              <div v-if="!isArtifactMission" class="d-flex justify-end" style="margin-top: -20px">
                 <div class="d-flex flex-column justify-end align-end" style="width: 50%">
                   <!-- close button -->
                   <v-btn
@@ -511,6 +543,7 @@ import {
   mdiPlus,
   mdiClose,
   mdiCheck,
+  mdiCubeOutline,
   mdiDelete,
   mdiInformationVariant,
   mdiConsoleNetworkOutline,
@@ -518,8 +551,10 @@ import {
 } from "@mdi/js";
 import { VueEditor } from "vue2-editor";
 import { mapActions, mapState } from "pinia";
+import MissionArtifactPlayerDialog from "@/components/Dialogs/MissionArtifactPlayerDialog.vue";
 import RobotLoadingSpinner from "@/components/Reused/RobotLoadingSpinner.vue";
 import { getGalaxyMapObjectFromCourse } from "@/lib/ff";
+import { isArtifactHtml, resolveMissionContent } from "@/lib/missionArtifact";
 
 export default {
   name: "CreateEditDeleteMissionDialog",
@@ -537,16 +572,20 @@ export default {
   ],
   components: {
     VueEditor,
+    MissionArtifactPlayerDialog,
     RobotLoadingSpinner,
   },
   data: () => ({
     mdiPencil,
     mdiPlus,
     mdiClose,
+    mdiCubeOutline,
     mdiDelete,
     mdiCheck,
     mdiInformationVariant,
     mdiRobotExcited,
+    replacementArtifactHtml: null,
+    artifactFileError: "",
     dialog: false,
     dialogConfirm: false,
     dialogTitle: "Create a new Mission",
@@ -614,6 +653,10 @@ export default {
     dialog(newVal) {
       if (newVal && this.taskToEdit) {
         Object.assign(this.task, this.taskToEdit);
+        this.replacementArtifactHtml = null;
+        this.artifactFileError = "";
+        // Artifact missions never go through Quill — shown as a preview panel instead
+        if (this.isArtifactMission) return;
         // If there's existing HTML content, set it in the Quill editor
         // Prioritize missionInstructionsHtmlString over description for consistency with other components
         const contentToDisplay = this.task.missionInstructionsHtmlString || this.task.description;
@@ -636,6 +679,26 @@ export default {
   // },
   computed: {
     ...mapState(useRootStore, ["person"]),
+    /**
+     * Artifact missions (complete standalone HTML players) must never be
+     * loaded into Quill — it mangles them. Detected from the original task.
+     */
+    isArtifactMission() {
+      return resolveMissionContent(this.taskToEdit).mode === "artifact";
+    },
+    artifactHtml() {
+      return (
+        this.replacementArtifactHtml ||
+        (this.taskToEdit && this.taskToEdit.missionInstructionsHtmlString) ||
+        ""
+      );
+    },
+    artifactForPreview() {
+      return this.artifactHtml ? { kind: "html-inline", html: this.artifactHtml } : null;
+    },
+    artifactSizeKb() {
+      return Math.round(new Blob([this.artifactHtml]).size / 1024);
+    },
     dark() {
       return this.$vuetify.theme.isDark;
     },
@@ -660,6 +723,7 @@ export default {
         "submissionInstructions",
         "color",
         "orderIndex",
+        "missionRenderMode",
       ];
       const payload = {};
       allowedKeys.forEach((key) => {
@@ -674,17 +738,21 @@ export default {
       this.loading = true;
       this.disabled = true;
 
-      // Pull fresh HTML directly from Quill, upload embedded images, and sanitize it
-      try {
-        let htmlFromEditor = this.getQuillHtml();
-        htmlFromEditor = await this.replaceBase64ImagesWithStorageUrls(htmlFromEditor);
-        const sanitizedHtml = this.sanitizeHtmlEdges(htmlFromEditor);
-        task.description = sanitizedHtml;
-        task.missionInstructionsHtmlString = sanitizedHtml;
-        this.task.description = sanitizedHtml;
-        this.task.missionInstructionsHtmlString = sanitizedHtml;
-      } catch (e) {
-        // ignore and keep current description
+      if (this.isArtifactMission) {
+        this.applyArtifactFields(task);
+      } else {
+        // Pull fresh HTML directly from Quill, upload embedded images, and sanitize it
+        try {
+          let htmlFromEditor = this.getQuillHtml();
+          htmlFromEditor = await this.replaceBase64ImagesWithStorageUrls(htmlFromEditor);
+          const sanitizedHtml = this.sanitizeHtmlEdges(htmlFromEditor);
+          task.description = sanitizedHtml;
+          task.missionInstructionsHtmlString = sanitizedHtml;
+          this.task.description = sanitizedHtml;
+          this.task.missionInstructionsHtmlString = sanitizedHtml;
+        } catch (e) {
+          // ignore and keep current description
+        }
       }
 
       // format video & slides url with "http://"
@@ -728,17 +796,21 @@ export default {
       this.loading = true;
       this.disabled = true;
 
-      // Pull fresh HTML directly from Quill, upload embedded images, and sanitize it
-      try {
-        let htmlFromEditor = this.getQuillHtml();
-        htmlFromEditor = await this.replaceBase64ImagesWithStorageUrls(htmlFromEditor);
-        const sanitizedHtml = this.sanitizeHtmlEdges(htmlFromEditor);
-        task.description = sanitizedHtml;
-        task.missionInstructionsHtmlString = sanitizedHtml;
-        this.task.description = sanitizedHtml;
-        this.task.missionInstructionsHtmlString = sanitizedHtml;
-      } catch (e) {
-        // ignore and keep current description
+      if (this.isArtifactMission) {
+        this.applyArtifactFields(task);
+      } else {
+        // Pull fresh HTML directly from Quill, upload embedded images, and sanitize it
+        try {
+          let htmlFromEditor = this.getQuillHtml();
+          htmlFromEditor = await this.replaceBase64ImagesWithStorageUrls(htmlFromEditor);
+          const sanitizedHtml = this.sanitizeHtmlEdges(htmlFromEditor);
+          task.description = sanitizedHtml;
+          task.missionInstructionsHtmlString = sanitizedHtml;
+          this.task.description = sanitizedHtml;
+          this.task.missionInstructionsHtmlString = sanitizedHtml;
+        } catch (e) {
+          // ignore and keep current description
+        }
       }
 
       // format video & slides url with "http://"
@@ -772,6 +844,36 @@ export default {
     },
     cancel() {
       this.dialog = false;
+    },
+    /**
+     * Keep the artifact intact on save: never overwrite the standalone HTML
+     * player with Quill output. Applies a replacement file if one was loaded.
+     */
+    applyArtifactFields(task) {
+      const html = this.artifactHtml;
+      task.missionInstructionsHtmlString = html;
+      task.missionRenderMode = "iframe";
+      this.task.missionInstructionsHtmlString = html;
+      this.task.missionRenderMode = "iframe";
+    },
+    async onArtifactFileSelected(file) {
+      this.artifactFileError = "";
+      if (!file) {
+        this.replacementArtifactHtml = null;
+        return;
+      }
+      const text = await file.text();
+      if (!isArtifactHtml(text)) {
+        this.artifactFileError = "Not a complete HTML document (must start with <!DOCTYPE html>)";
+        this.replacementArtifactHtml = null;
+        return;
+      }
+      if (new Blob([text]).size > 900 * 1024) {
+        this.artifactFileError = "Artifact exceeds 900KB (Firestore document limit)";
+        this.replacementArtifactHtml = null;
+        return;
+      }
+      this.replacementArtifactHtml = text;
     },
     // delete task
     deleteDialog() {
@@ -1141,6 +1243,10 @@ export default {
 <style scoped lang="scss">
 ::v-deep .ql-tooltip {
   left: unset !important;
+}
+.artifact-panel {
+  border: 1px dashed var(--v-missionAccent-base);
+  padding: 16px;
 }
 .create-dialog {
   background-color: var(--v-background-base);
