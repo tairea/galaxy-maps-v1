@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   GM_MISSION_EVENTS,
   GM_MISSION_SOURCE,
+  ensureGmMissionBridge,
   isArtifactHtml,
   isGmMissionMessage,
   resolveMissionContent,
@@ -100,6 +101,43 @@ describe("resolveMissionContent", () => {
       mode: "legacy",
       content: "text",
     });
+  });
+});
+
+describe("ensureGmMissionBridge", () => {
+  const LEGACY_DOC = `<!DOCTYPE html>
+<html><head><title>Legacy</title></head>
+<body><button id="completeBtn">✓ Mark Mission as Complete</button>
+<script>document.getElementById('completeBtn').addEventListener('click', (e)=>{ e.target.disabled=true; });</script>
+</body></html>`;
+
+  it("injects the shim before </body> for legacy artifacts", () => {
+    const result = ensureGmMissionBridge(LEGACY_DOC);
+    expect(result).toContain(GM_MISSION_EVENTS.COMPLETE);
+    expect(result).toContain(GM_MISSION_EVENTS.START);
+    expect(result).toContain(GM_MISSION_SOURCE);
+    expect(result.indexOf("__gmMissionBridgeShim")).toBeLessThan(result.indexOf("</body>"));
+    // original content preserved
+    expect(result).toContain('id="completeBtn"');
+  });
+
+  it("appends the shim when there is no </body> tag", () => {
+    const result = ensureGmMissionBridge("<html><button id='completeBtn'>done</button></html>");
+    expect(result).toContain("__gmMissionBridgeShim");
+  });
+
+  it("passes through artifacts that already ship the bridge", () => {
+    const withBridge = `<!DOCTYPE html><html><body><script>window.parent.postMessage({source:'gm-mission',version:1,type:'gm:mission-complete'},'*');</script></body></html>`;
+    expect(ensureGmMissionBridge(withBridge)).toBe(withBridge);
+  });
+
+  it("is idempotent", () => {
+    const once = ensureGmMissionBridge(LEGACY_DOC);
+    expect(ensureGmMissionBridge(once)).toBe(once);
+  });
+
+  it("passes through empty strings", () => {
+    expect(ensureGmMissionBridge("")).toBe("");
   });
 });
 

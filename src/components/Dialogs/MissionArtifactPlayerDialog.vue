@@ -74,6 +74,7 @@ export default {
   },
   methods: {
     onComplete() {
+      if (this.playerFinished) return;
       this.playerFinished = true;
       // Give the learner a beat to read the in-player completion screen,
       // then hand back to the platform's completion flow.

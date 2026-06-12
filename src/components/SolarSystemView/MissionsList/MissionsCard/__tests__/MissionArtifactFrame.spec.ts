@@ -36,7 +36,9 @@ describe("MissionArtifactFrame", () => {
     wrapper = mountFrame();
     const iframe = wrapper.find("iframe");
     expect(iframe.exists()).toBe(true);
-    expect(iframe.attributes("srcdoc")).toBe(ARTIFACT.html);
+    // legacy artifact (no bridge of its own) → original html + injected shim
+    expect(iframe.attributes("srcdoc")).toContain("<body>hi");
+    expect(iframe.attributes("srcdoc")).toContain("__gmMissionBridgeShim");
     const sandbox = iframe.attributes("sandbox") || "";
     expect(sandbox).toContain("allow-scripts");
     expect(sandbox).not.toContain("allow-same-origin");

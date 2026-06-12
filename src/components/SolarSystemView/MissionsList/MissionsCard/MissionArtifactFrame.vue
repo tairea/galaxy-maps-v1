@@ -2,7 +2,7 @@
   <iframe
     ref="frame"
     class="mission-artifact-frame"
-    :srcdoc="artifact.kind === 'html-inline' ? artifact.html : undefined"
+    :srcdoc="srcdoc"
     :src="artifact.kind === 'html-url' ? artifact.url : undefined"
     sandbox="allow-scripts allow-pointer-lock allow-popups allow-popups-to-escape-sandbox"
     allow="fullscreen; autoplay"
@@ -13,7 +13,11 @@
 </template>
 
 <script>
-import { GM_MISSION_EVENTS, isGmMissionMessage } from "@/lib/missionArtifact";
+import {
+  GM_MISSION_EVENTS,
+  ensureGmMissionBridge,
+  isGmMissionMessage,
+} from "@/lib/missionArtifact";
 
 /**
  * Renders a mission artifact (a complete standalone HTML document) in an
@@ -33,6 +37,15 @@ export default {
       type: Object,
       required: true,
       validator: (a) => ["html-inline", "html-url"].includes(a.kind),
+    },
+  },
+  computed: {
+    srcdoc() {
+      // legacy artifacts (built before the template emitted bridge events)
+      // get the completion shim injected so the host hears #completeBtn
+      return this.artifact.kind === "html-inline"
+        ? ensureGmMissionBridge(this.artifact.html)
+        : undefined;
     },
   },
   mounted() {

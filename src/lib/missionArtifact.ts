@@ -53,6 +53,51 @@ export function isGmMissionMessage(data: unknown): data is GmMissionMessage {
 }
 
 // ---------------------------------------------------------------------------
+// Bridge shim for legacy artifacts
+// ---------------------------------------------------------------------------
+
+/**
+ * Artifacts built before the mission player template gained the gm-mission
+ * bridge have an in-canvas "Mark Mission as Complete" button (#completeBtn)
+ * that only mutates its own label — the host never hears about completion.
+ * This shim, injected at render time, listens in capture phase (so it fires
+ * regardless of the artifact's own handlers) and posts the standard envelope
+ * for the template's #startBtn / #completeBtn.
+ */
+const GM_MISSION_BRIDGE_SHIM = `<script>(function () {
+  if (window.__gmMissionBridgeShim) return;
+  window.__gmMissionBridgeShim = true;
+  function notify(type) {
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ source: "${GM_MISSION_SOURCE}", version: ${GM_MISSION_PROTOCOL_VERSION}, type: type }, "*");
+      }
+    } catch (e) {}
+  }
+  document.addEventListener("click", function (event) {
+    var target = event.target;
+    if (!target || !target.closest) return;
+    if (target.closest("#completeBtn")) notify("${GM_MISSION_EVENTS.COMPLETE}");
+    else if (target.closest("#startBtn")) notify("${GM_MISSION_EVENTS.START}");
+  }, true);
+})();</script>`;
+
+/**
+ * Return artifact HTML guaranteed to emit gm-mission bridge events.
+ * Artifacts that already ship the bridge (the string "gm-mission" appears in
+ * their source) pass through untouched; legacy artifacts get the shim
+ * injected before </body> so the platform's completion flow still triggers.
+ */
+export function ensureGmMissionBridge(html: string): string {
+  if (!html || html.includes(GM_MISSION_SOURCE)) return html;
+  const bodyClose = /<\/body\s*>/i;
+  if (bodyClose.test(html)) {
+    return html.replace(bodyClose, `${GM_MISSION_BRIDGE_SHIM}</body>`);
+  }
+  return html + GM_MISSION_BRIDGE_SHIM;
+}
+
+// ---------------------------------------------------------------------------
 // Detection
 // ---------------------------------------------------------------------------
 
