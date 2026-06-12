@@ -88,7 +88,7 @@
                       :items="cohortOptions"
                       outlined
                       single-line
-                      :disabled="!teachersCohorts.length"
+                      :disabled="!cohortOptions.length"
                       class="cohort-select"
                     >
                       <template v-slot:selection="{ item }">
@@ -336,6 +336,7 @@ export default {
     course: null,
     courses: [],
     currentCourse: null,
+    courseDefaultCohort: null,
     selectedCohort: null,
   }),
   async mounted() {
@@ -345,6 +346,14 @@ export default {
 
     if (this.currentCourseId) {
       this.currentCourse = await fetchCourseByCourseId(this.currentCourseId);
+      // the course's default Squad (courseCohort: true) is filtered out of
+      // teachersCohorts upstream, so it has to be fetched directly
+      if (this.currentCourse?.cohort) {
+        this.courseDefaultCohort = await fetchCohortByCohortId(this.currentCourse.cohort);
+        if (this.courseDefaultCohort && !this.cohort) {
+          this.cohort = this.courseDefaultCohort;
+        }
+      }
     }
   },
   watch: {
@@ -356,13 +365,15 @@ export default {
   computed: {
     ...mapState(useRootStore, ["currentCourseId", "currentCohortId", "person"]),
     cohortOptions() {
-      // teacherCohorts && the courseCohort
-      if (this.currentCourse && this.currentCourse.cohort && this.teachersCohorts) {
-        this.cohort = this.teachersCohorts.find(
-          (cohort) => cohort.id === this.currentCourse.cohort,
-        );
+      // the course's default Squad first, then the teacher's own squads
+      const teacherOptions = this.teachersCohorts || [];
+      if (this.courseDefaultCohort) {
+        return [
+          this.courseDefaultCohort,
+          ...teacherOptions.filter((cohort) => cohort.id !== this.courseDefaultCohort.id),
+        ];
       }
-      return this.cohort ? [this.cohort, ...this.teachersCohorts] : this.teachersCohorts || [];
+      return teacherOptions;
     },
     isMobile() {
       return this.$vuetify.breakpoint.smAndDown;
