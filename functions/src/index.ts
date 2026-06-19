@@ -86,6 +86,7 @@ import {
   updatePersonByPersonIdHttpsEndpoint,
   updateUserPasswordHttpsEndpoint,
   resendInitialSetupLinkHttpsEndpoint,
+  resendVerificationEmailHttpsEndpoint,
 } from "./userManagement.js";
 import {
   downloadAndUploadImageHttpsEndpoint,
@@ -199,6 +200,7 @@ export {
   updatePersonByPersonIdHttpsEndpoint as updatePersonByPersonId,
   updateUserPasswordHttpsEndpoint as updateUserPassword,
   resendInitialSetupLinkHttpsEndpoint as resendInitialSetupLink,
+  resendVerificationEmailHttpsEndpoint as resendVerificationEmail,
 };
 
 // openai

@@ -80,6 +80,32 @@ Galaxy Maps Team`;
   log("New student invite email sent to: ", email);
 }
 
+/**
+ * Sends an email-verification link to a user who registered but hasn't verified
+ * their email yet (e.g. their original verification link expired).
+ */
+export async function sendVerificationEmail(email: string, displayName: string, link: string) {
+  const mailOptions: Record<string, string> = {
+    from: `${APP_NAME} <noreply@${DOMAIN}>`,
+    to: email,
+  };
+
+  mailOptions.subject = `Verify your ${APP_NAME} account`;
+  mailOptions.text = `Greetings, ${displayName || "Navigator"}
+
+Please verify your email address to activate your ${APP_NAME} account.
+
+Click this link to verify your account: ${link}
+
+If you didn't create this account, you can safely ignore this email.
+
+If you have any issues please contact base@${DOMAIN}
+
+Galaxy Maps Team`;
+  await getMailTransport().sendMail(mailOptions);
+  log("Verification email sent to: ", email);
+}
+
 // ======COHORT REGISTRATION NOTIFICATION==================
 export const sendNewCohortEmailHttpsEndpoint = runWith({
   secrets: ["GMAIL_EMAIL", "GMAIL_PASSWORD"],

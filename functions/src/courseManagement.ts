@@ -1979,7 +1979,7 @@ export const assignCourseToStudentHttpsEndpoint = runWith({
 /**
  * Add person to course
  */
-async function assignCourseToStudent(courseId: string, personId: string) {
+export async function assignCourseToStudent(courseId: string, personId: string) {
   // Load person and course from their IDs
   const [personDoc, courseDoc] = await Promise.all([
     db.collection("people").doc(personId).get(),
@@ -1997,9 +1997,22 @@ async function assignCourseToStudent(courseId: string, personId: string) {
 
   console.log("person:", person);
 
-  // check if student is assigned to course
-  if (!person.assignedCourses || !person.assignedCourses.includes(courseId)) {
-    console.log("course DOES NOT exist for student", person.firstName + " " + person.lastName);
+  // Determine whether the student already has topic progression records for this course.
+  // We key off the actual progression records (not the assignedCourses array) so this is
+  // idempotent and self-healing: if a student ended up in assignedCourses without records
+  // (e.g. via bulk cohort import), we still create the missing records here.
+  const existingProgression = await db
+    .collection("people")
+    .doc(personDoc.id)
+    .collection(courseDoc.id)
+    .limit(1)
+    .get();
+
+  if (existingProgression.empty) {
+    console.log(
+      "course progression DOES NOT exist for student",
+      person.firstName + " " + person.lastName,
+    );
 
     // Add the topics and tasks to the student
 
@@ -2069,7 +2082,9 @@ async function assignCourseToStudent(courseId: string, personId: string) {
       }
     }
   } else {
-    console.log(person.firstName + " is already in " + course.title + ". Continuing...");
+    console.log(
+      person.firstName + " already has progression for " + course.title + ". Continuing...",
+    );
   }
 
   // Ensure the course is added to the person's assignedCourses

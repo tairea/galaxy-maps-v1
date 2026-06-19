@@ -32,6 +32,17 @@ export const fetchCohorts = async (): Promise<ICohort[]> => {
   return result.data.cohorts;
 };
 
+// Resend an email-verification link to an unverified account. Public/unauthenticated:
+// works without the user's password, so it can be called from the register/login
+// error states. Returns "alreadyVerified" if the account is already verified.
+export const resendVerificationEmail = async (
+  email: string,
+): Promise<{ success: boolean; status: "sent" | "alreadyVerified" }> => {
+  const resend = functions.httpsCallable("resendVerificationEmail");
+  const result = await resend({ email });
+  return result.data;
+};
+
 export const fetchCohortByCohortId = async (cohortId: string): Promise<ICohort> => {
   const data = {
     cohortId,

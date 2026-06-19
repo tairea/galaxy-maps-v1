@@ -473,29 +473,61 @@ export default {
           this.loading = false;
         });
     },
-    proceed() {
+    proceed(retries = 0) {
+      // Wait briefly for auth/person state to settle after sign-in, but don't loop
+      // forever — a missing person doc (e.g. a stranded account) must not hang here.
       if (!this.user?.data?.id || !this.person?.id) {
-        return setTimeout(() => {
-          this.proceed();
-        }, 500);
+        if (retries >= 20) {
+          // Gave up waiting on the person doc; decide based on Auth status directly.
+          return this.handleVerifiedRedirect();
+        }
+        return setTimeout(() => this.proceed(retries + 1), 500);
       }
-
-      if (!this.user.data.verified) {
+      this.handleVerifiedRedirect();
+    },
+    async handleVerifiedRedirect() {
+      const authUser = firebase.auth().currentUser;
+      // Reload so emailVerified reflects a link the user may have just clicked elsewhere.
+      try {
+        await authUser?.reload();
+      } catch (e) {
+        // ignore – fall back to whatever status we already have
+      }
+      const verified = authUser?.emailVerified ?? this.user?.data?.verified;
+      if (verified) {
+        this.loading = false;
+        this.$router.push("/");
+      } else {
+        await this.resendVerificationOnLogin(authUser);
+      }
+    },
+    async resendVerificationOnLogin(authUser) {
+      this.loading = false;
+      if (!authUser) {
+        this.$router.push("/verify");
+        return;
+      }
+      try {
         const actionCodeSettings = {
           url: window.location.origin + "/login",
           handleCodeInApp: true,
         };
-        firebase.auth().currentUser.sendEmailVerification(actionCodeSettings);
-        this.loading = false;
+        await authUser.sendEmailVerification(actionCodeSettings);
         this.setSnackbar({
           show: true,
-          text: "Your account is not verified. We've just emailed you a link to verify your account. Please check your email.",
+          text: "Your account isn't verified yet. We've emailed you a fresh verification link — please check your inbox.",
           color: "baseAccent",
         });
-        throw new Error("Please check your emails to verify your account");
-      } else {
-        this.$router.push("/");
+      } catch (err) {
+        // Firebase rate-limits resends; if we've sent too many recently, just guide
+        // them to the link already in their inbox rather than surfacing an error.
+        this.setSnackbar({
+          show: true,
+          text: "Your account isn't verified yet. Please check your inbox for the verification link we sent — including your spam folder.",
+          color: "baseAccent",
+        });
       }
+      this.$router.push("/verify");
     },
     validate() {
       this.$refs.form.validate();

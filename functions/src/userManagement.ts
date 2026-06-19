@@ -3,7 +3,8 @@ import { runWith } from "firebase-functions/v1";
 import { HttpsError } from "firebase-functions/v1/https";
 import { DOMAIN } from "./_constants.js";
 import { auth, db, requireAuthenticated } from "./_shared.js";
-import { sendStudentInviteEmail, sendTeacherInviteEmail } from "./emails.js";
+import { sendStudentInviteEmail, sendTeacherInviteEmail, sendVerificationEmail } from "./emails.js";
+import { assignCourseToStudent } from "./courseManagement.js";
 import { FieldValue } from "firebase-admin/firestore";
 
 // Get a person by personId
@@ -363,14 +364,11 @@ export const bulkImportStudentsHttpsEndpoint = runWith({
         const cohortData = cohortDoc.data();
 
         if (cohortData?.courses?.length) {
-          // Assign courses - add to person's assignedCourses array
+          // Assign courses. This must create the per-student topic/task progression
+          // records (people/{personId}/{courseId}) as well as adding to assignedCourses,
+          // otherwise the student sees a fully-locked galaxy map with no accessible nodes.
           for (const courseId of cohortData.courses) {
-            await db
-              .collection("people")
-              .doc(personId)
-              .update({
-                assignedCourses: FieldValue.arrayUnion(courseId),
-              });
+            await assignCourseToStudent(courseId, personId);
           }
         }
 
@@ -431,14 +429,11 @@ export const bulkImportStudentsHttpsEndpoint = runWith({
         const cohortData = cohortDoc.data();
 
         if (cohortData?.courses?.length) {
-          // Assign courses - add to person's assignedCourses array
+          // Assign courses. This must create the per-student topic/task progression
+          // records (people/{personId}/{courseId}) as well as adding to assignedCourses,
+          // otherwise the student sees a fully-locked galaxy map with no accessible nodes.
           for (const courseId of cohortData.courses) {
-            await db
-              .collection("people")
-              .doc(person.id)
-              .update({
-                assignedCourses: FieldValue.arrayUnion(courseId),
-              });
+            await assignCourseToStudent(courseId, person.id);
           }
         }
 
@@ -511,4 +506,59 @@ export const resendInitialSetupLinkHttpsEndpoint = runWith({
   }
 
   return { success: true };
+});
+
+/**
+ * Public (unauthenticated) endpoint that resends an email-verification link to a
+ * user who registered but never verified — e.g. their original link expired.
+ *
+ * This is the recovery path for the "I registered, didn't verify in time, and now
+ * re-registering says the email is already in use" problem. It works without the
+ * user's password and uses our own branded email instead of Firebase's default.
+ *
+ * To avoid leaking which emails have accounts, a generic { status: "sent" } is
+ * returned when no account exists. When the account is already verified we return
+ * { status: "alreadyVerified" } so the UI can nudge the user to simply log in.
+ */
+export const resendVerificationEmailHttpsEndpoint = runWith({
+  secrets: ["GMAIL_EMAIL", "GMAIL_PASSWORD"],
+}).https.onCall(async (data, _context) => {
+  const email = ((data?.email as string) ?? "").trim();
+  if (!email) {
+    throw new HttpsError("invalid-argument", "missing required field: email");
+  }
+
+  let userRecord;
+  try {
+    userRecord = await auth.getUserByEmail(email);
+  } catch (err) {
+    // No account with this email — respond generically so we don't reveal it.
+    log("resendVerificationEmail: no auth user for", email);
+    return { success: true, status: "sent" };
+  }
+
+  // Already verified — let the UI tell them to just log in.
+  if (userRecord.emailVerified) {
+    log("resendVerificationEmail: account already verified", email);
+    return { success: true, status: "alreadyVerified" };
+  }
+
+  // Prefer a friendly greeting from the Auth record, falling back to the person doc.
+  let displayName = userRecord.displayName ?? "";
+  if (!displayName) {
+    const personQuery = await db.collection("people").where("email", "==", email).limit(1).get();
+    const personData = personQuery.docs[0]?.data();
+    displayName = (personData?.firstName as string) ?? (personData?.displayName as string) ?? "";
+  }
+
+  const actionCodeSettings = {
+    url: `https://${DOMAIN}/login`,
+    handleCodeInApp: true,
+  };
+
+  const link = await auth.generateEmailVerificationLink(email, actionCodeSettings);
+  await sendVerificationEmail(email, displayName, link);
+  log("resendVerificationEmail: verification link sent to", email);
+
+  return { success: true, status: "sent" };
 });

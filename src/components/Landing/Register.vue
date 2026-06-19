@@ -146,6 +146,7 @@ import firebase from "firebase/compat/app";
 import { mapActions } from "pinia";
 import { mdiEye, mdiEyeOff, mdiPencil, mdiAccount } from "@mdi/js";
 import { navigatorImages, getFriendlyErrorMessage } from "@/lib/utils";
+import { resendVerificationEmail } from "@/lib/ff";
 
 export default {
   name: "Register",
@@ -280,13 +281,79 @@ export default {
           // this.$emit("verify");
         })
         .catch((error) => {
+          // Most common dead-end: the email is already registered. Usually this is
+          // someone who registered before but never verified (or their link expired)
+          // and is now trying again. Turn it into a recovery path instead of an error.
+          if (error.code === "auth/email-already-in-use") {
+            return this.handleExistingAccount();
+          }
           this.setSnackbar({
             show: true,
             text: getFriendlyErrorMessage(error.code),
             color: "pink",
           });
-          this.person = {};
+          this.loading = false;
         });
+    },
+    async handleExistingAccount() {
+      const email = this.person.email;
+      const password = this.person.password;
+      // First try to sign in with the credentials they just entered. If it's the same
+      // person re-registering, this works and we can resend a fresh verification link.
+      try {
+        const cred = await firebase.auth().signInWithEmailAndPassword(email, password);
+        if (cred.user && !cred.user.emailVerified) {
+          const actionCodeSettings = {
+            url: window.location.origin + "/login",
+            handleCodeInApp: true,
+          };
+          await cred.user.sendEmailVerification(actionCodeSettings);
+          this.loading = false;
+          this.setSnackbar({
+            show: true,
+            text: "Looks like you already registered but haven't verified your email yet. We've sent you a fresh verification link — please check your inbox.",
+            color: "baseAccent",
+          });
+          this.$router.push("/verify");
+          return;
+        }
+        // Account exists and is already verified — just send them to log in.
+        this.loading = false;
+        this.setSnackbar({
+          show: true,
+          text: "You already have a verified account. Please log in.",
+          color: "baseAccent",
+        });
+        this.$router.push("/login");
+      } catch (signInErr) {
+        // Couldn't sign in (e.g. they used a different/forgotten password). Fall back to
+        // the public resend-verification function, which works without the password.
+        this.loading = false;
+        try {
+          const res = await resendVerificationEmail(email);
+          if (res.status === "alreadyVerified") {
+            this.setSnackbar({
+              show: true,
+              text: "This email already has a verified account. Please log in, or reset your password if you've forgotten it.",
+              color: "baseAccent",
+            });
+            this.$router.push("/login");
+          } else {
+            this.setSnackbar({
+              show: true,
+              text: "This email is already registered. If it wasn't verified yet, we've just emailed you a fresh verification link. Otherwise, please log in.",
+              color: "baseAccent",
+            });
+            this.$router.push("/verify");
+          }
+        } catch (resendErr) {
+          this.setSnackbar({
+            show: true,
+            text: getFriendlyErrorMessage("auth/email-already-in-use"),
+            color: "pink",
+          });
+        }
+      }
     },
     validate() {
       this.$refs.form.validate();
