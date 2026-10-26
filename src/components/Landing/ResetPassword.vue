@@ -1,12 +1,30 @@
 <template>
   <div class="login">
     <!-- <v-img :src="`https://i.pravatar.cc/300`" class="gm-logo"></v-img> -->
-    <div id="galaxy-info">
+    <div v-if="googleOnly" id="galaxy-info">
+      <h2 class="galaxy-label">GOOGLE ACCOUNT</h2>
+      <p class="overline mt-3 baseAccent--text">{{ email }}</p>
+      <p class="google-only-notice baseAccent--text">
+        This account signs in with Google, so it doesn't have a password to reset. Sign in with
+        Google instead.
+      </p>
+      <v-btn
+        color="baseAccent"
+        class="mt-2"
+        outlined
+        width="100%"
+        :loading="loadingGoogle"
+        @click="googleSignIn"
+      >
+        <v-icon left class="mr-2">{{ mdiGoogle }}</v-icon>
+        Sign in with Google
+      </v-btn>
+      <p class="overline mt-4 mb-0 text-center">
+        <a class="resetPassButton" @click="googleOnly = false">Use a different email</a>
+      </p>
+    </div>
+    <div v-else id="galaxy-info">
       <h2 class="galaxy-label">RESET PASSWORD</h2>
-      <!-- <h1 class="galaxy-title">Login</h1> -->
-      <!-- <div class="d-flex justify-center align-center"> -->
-      <!-- <v-img class="galaxy-image" :src=""></v-img> -->
-      <!-- </div> -->
       <p class="overline mt-3 baseAccent--text">Enter your email to reset your password</p>
       <v-form
         ref="form"
@@ -37,15 +55,6 @@
           Reset Password
         </v-btn>
       </v-form>
-      <div v-if="googleOnly" class="google-only-notice">
-        <p class="baseAccent--text">
-          This account signs in with Google, so it doesn't have a password to reset. Use the "Sign
-          in with Google" button on the login page instead.
-        </p>
-        <v-btn color="baseAccent" outlined width="100%" @click="$router.push('/login')">
-          Go to Login
-        </v-btn>
-      </div>
     </div>
 
     <BackButton :toPath="'/login'" />
@@ -57,7 +66,10 @@ import BackButton from "@/components/Reused/BackButton.vue";
 import useRootStore from "@/store/index";
 import firebase from "firebase/compat/app";
 import { mapActions } from "pinia";
-import { getFriendlyErrorMessage } from "@/lib/utils";
+import "firebase/compat/auth";
+import { mdiGoogle } from "@mdi/js";
+import { getFriendlyErrorMessage, ensureGooglePersonDocument } from "@/lib/utils";
+import { db } from "@/store/firestoreConfig";
 
 export default {
   name: "ResetPassword",
@@ -65,6 +77,7 @@ export default {
     BackButton,
   },
   data: () => ({
+    mdiGoogle,
     valid: true,
     email: "",
     password: "",
@@ -74,12 +87,8 @@ export default {
     ],
     loading: false,
     googleOnly: false,
+    loadingGoogle: false,
   }),
-  watch: {
-    email() {
-      this.googleOnly = false;
-    },
-  },
   mounted() {},
   methods: {
     ...mapActions(useRootStore, ["setSnackbar"]),
@@ -106,6 +115,32 @@ export default {
     },
     validate() {
       this.$refs.form.validate();
+    },
+    async googleSignIn() {
+      const provider = new firebase.auth.GoogleAuthProvider();
+      // Preselect the account they typed in Google's account chooser
+      provider.setCustomParameters({ login_hint: this.email });
+      try {
+        this.loadingGoogle = true;
+        await firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+        const result = await firebase.auth().signInWithPopup(provider);
+        if (result.user) {
+          await ensureGooglePersonDocument(result.user, db);
+        }
+        this.$router.push("/");
+      } catch (error) {
+        if (error && error.code === "auth/popup-blocked") {
+          await firebase.auth().signInWithRedirect(provider);
+          return;
+        }
+        this.setSnackbar({
+          show: true,
+          text: getFriendlyErrorMessage(error.code || "auth/error"),
+          color: "pink",
+        });
+      } finally {
+        this.loadingGoogle = false;
+      }
     },
     async resetPassword() {
       this.loading = true;
@@ -213,6 +248,7 @@ export default {
 
     .google-only-notice {
       font-size: 0.85rem;
+      margin-top: 12px;
     }
   }
 
