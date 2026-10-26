@@ -37,6 +37,15 @@
           Reset Password
         </v-btn>
       </v-form>
+      <div v-if="googleOnly" class="google-only-notice">
+        <p class="baseAccent--text">
+          This account signs in with Google, so it doesn't have a password to reset. Use the "Sign
+          in with Google" button on the login page instead.
+        </p>
+        <v-btn color="baseAccent" outlined width="100%" @click="$router.push('/login')">
+          Go to Login
+        </v-btn>
+      </div>
     </div>
 
     <BackButton :toPath="'/login'" />
@@ -64,7 +73,13 @@ export default {
       (v) => /.+@.+\..+/.test(v) || "E-mail must be valid",
     ],
     loading: false,
+    googleOnly: false,
   }),
+  watch: {
+    email() {
+      this.googleOnly = false;
+    },
+  },
   mounted() {},
   methods: {
     ...mapActions(useRootStore, ["setSnackbar"]),
@@ -92,8 +107,24 @@ export default {
     validate() {
       this.$refs.form.validate();
     },
-    resetPassword() {
+    async resetPassword() {
       this.loading = true;
+      this.googleOnly = false;
+
+      // Google-only accounts have no password, so Firebase sends no reset email
+      // even though sendPasswordResetEmail resolves. Point them at Google sign-in instead.
+      try {
+        const methods = await firebase.auth().fetchSignInMethodsForEmail(this.email);
+        if (methods.includes("google.com") && !methods.includes("password")) {
+          this.googleOnly = true;
+          this.loading = false;
+          return;
+        }
+      } catch (error) {
+        // Lookup failed (e.g. network); fall through and try the reset anyway.
+        console.log("fetchSignInMethodsForEmail error:", error);
+      }
+
       console.log("sending reset email password");
       firebase
         .auth()
@@ -115,6 +146,9 @@ export default {
             text: getFriendlyErrorMessage(error.code),
             color: "pink",
           });
+        })
+        .finally(() => {
+          this.loading = false;
         });
     },
   },
@@ -175,6 +209,10 @@ export default {
     .resetPassButton {
       text-decoration: underline;
       cursor: pointer;
+    }
+
+    .google-only-notice {
+      font-size: 0.85rem;
     }
   }
 
